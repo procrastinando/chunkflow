@@ -6,32 +6,25 @@ import os
 # -------------------------------------------------------
 # PACKAGE INSTALLER
 # -------------------------------------------------------
-# Map: 'import_name': 'pip_package_name'
 required_packages = {
     'flask': 'Flask',
     'langchain_text_splitters': 'langchain-text-splitters',
-    # Note: langchain-text-splitters usually installs langchain-core automatically
 }
 
 def install_and_import(import_name, pip_name):
-    # check if module is already installed
     if importlib.util.find_spec(import_name) is None:
         print(f"📦 [System]: Installing {pip_name}...")
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
             print(f"✅ [System]: {pip_name} installed successfully.")
         except subprocess.CalledProcessError:
-            print(f"❌ [System]: Failed to install {pip_name}. Check internet connection.")
+            print(f"❌ [System]: Failed to install {pip_name}.")
             sys.exit(1)
-    else:
-        print(f"🔹 [System]: {pip_name} is already installed.")
 
-print("---------------------------------------")
-print("   Initializing ChunkFlow Environment  ")
-print("---------------------------------------")
+print("--- Initializing ChunkFlow Environment ---")
 for import_name, install_name in required_packages.items():
     install_and_import(import_name, install_name)
-print("---------------------------------------\n")
+print("------------------------------------------\n")
 
 # -------------------------------------------------------
 # APP IMPORTS & LOGIC
@@ -40,10 +33,9 @@ import shutil
 import json
 import re
 import uuid
-import zipfile
 from flask import Flask, render_template, request, send_file, jsonify
 
-# LangChain imports (now guaranteed to exist)
+# LangChain imports
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 app = Flask(__name__)
@@ -71,31 +63,25 @@ def process_files(file_paths, chunk_size, chunk_overlap, session_id):
     os.makedirs(session_dir, exist_ok=True)
     
     # 2. Configure Splitters
-    # First: Structure aware splitting
-    headers_to_split_on = [
-        ("#", "H1"),
-        ("##", "H2"),
-        ("###", "H3"),
-    ]
-    md_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=headers_to_split_on, 
-        strip_headers=False
-    )
-
-    # Second: Size enforcement
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size, 
-        chunk_overlap=chunk_overlap
-    )
+    headers_to_split_on = [("#", "H1"), ("##", "H2"), ("###", "H3")]
+    md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     logs = []
     
+    # UUID length is 36 characters + 1 underscore = 37 chars to strip
+    PREFIX_LEN = 37 
+
     for file_path in file_paths:
-        file_name = os.path.basename(file_path)
-        file_base_name = os.path.splitext(file_name)[0]
+        # file_path is like: temp_uploads/uuid_OriginalName.md
+        temp_filename = os.path.basename(file_path)
+        
+        # Strip the UUID prefix to get "OriginalName.md"
+        clean_filename = temp_filename[PREFIX_LEN:] 
+        file_base_name = os.path.splitext(clean_filename)[0]
         
         try:
-            # Folder for this specific document
+            # Create a folder using the CLEAN name
             doc_folder = os.path.join(session_dir, file_base_name)
             os.makedirs(doc_folder, exist_ok=True)
             
@@ -107,36 +93,38 @@ def process_files(file_paths, chunk_size, chunk_overlap, session_id):
             header_splits = md_splitter.split_text(clean_text)
             final_chunks = text_splitter.split_documents(header_splits)
 
-            # Save Chunks
+            # Save Chunks with CLEAN names
             for i, chunk in enumerate(final_chunks):
                 chunk_data = {
-                    "source": file_name,
+                    "source": clean_filename,
                     "chunk_index": i,
                     "metadata": chunk.metadata,
                     "content": chunk.page_content
                 }
                 
-                # Naming: docname_part_001.json
-                chunk_filename = f"{file_base_name}_part_{i+1:03d}.json"
-                save_path = os.path.join(doc_folder, chunk_filename)
+                # Naming: OriginalName_part_001.json
+                chunk_output_name = f"{file_base_name}_part_{i+1:03d}.json"
+                save_path = os.path.join(doc_folder, chunk_output_name)
                 
                 with open(save_path, "w", encoding="utf-8") as f:
                     json.dump(chunk_data, f, indent=2, ensure_ascii=False)
             
-            logs.append({"file": file_name, "status": "success", "chunks": len(final_chunks)})
+            logs.append({"file": clean_filename, "status": "success", "chunks": len(final_chunks)})
 
         except Exception as e:
-            logs.append({"file": file_name, "status": "error", "message": str(e)})
+            logs.append({"file": clean_filename, "status": "error", "message": str(e)})
 
     # 3. Zip the result
-    zip_filename = f"chunks_{session_id}"
-    zip_path_no_ext = os.path.join(OUTPUT_FOLDER, zip_filename)
+    # We name the zip file generic or based on first file, but stored in temp output with UUID
+    zip_storage_name = f"processed_{session_id}"
+    zip_path_no_ext = os.path.join(OUTPUT_FOLDER, zip_storage_name)
+    
     shutil.make_archive(zip_path_no_ext, 'zip', session_dir)
     
     # 4. Cleanup unzipped session data
     shutil.rmtree(session_dir)
     
-    return f"{zip_filename}.zip", logs
+    return f"{zip_storage_name}.zip", logs
 
 # --- Routes ---
 
@@ -146,12 +134,9 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process():
-    # Generate unique ID for this processing batch
     session_id = str(uuid.uuid4())
-    
     uploaded_files = request.files.getlist('files')
     
-    # Get form data or use defaults
     try:
         chunk_size = int(request.form.get('chunk_size', 4000))
         chunk_overlap = int(request.form.get('chunk_overlap', 400))
@@ -164,10 +149,9 @@ def process():
 
     saved_paths = []
     try:
-        # Save uploads temporarily
         for file in uploaded_files:
             if file.filename.endswith('.md'):
-                # Prefix filename with session_id to prevent collisions in temp folder
+                # Save with UUID prefix to avoid collisions on disk
                 safe_name = f"{session_id}_{file.filename}"
                 path = os.path.join(UPLOAD_FOLDER, safe_name)
                 file.save(path)
@@ -177,7 +161,7 @@ def process():
             return jsonify({'error': 'No Valid .md files found'}), 400
 
         # Run Logic
-        zip_name, logs = process_files(saved_paths, chunk_size, chunk_overlap, session_id)
+        zip_storage_name, logs = process_files(saved_paths, chunk_size, chunk_overlap, session_id)
         
         # Cleanup Input Files
         for p in saved_paths:
@@ -185,12 +169,11 @@ def process():
                 os.remove(p)
             
         return jsonify({
-            'download_url': f"/download/{zip_name}",
+            'download_url': f"/download/{zip_storage_name}",
             'logs': logs
         })
 
     except Exception as e:
-        # Clean up if everything explodes
         for p in saved_paths:
             if os.path.exists(p):
                 os.remove(p)
@@ -198,11 +181,13 @@ def process():
 
 @app.route('/download/<filename>')
 def download(filename):
-    # Sanitize filename to prevent directory traversal
-    safe_name = os.path.basename(filename)
-    return send_file(os.path.join(OUTPUT_FOLDER, safe_name), as_attachment=True)
+    # Determine a nice name for the user download (ChunkFlow_Output.zip)
+    # instead of processed_uuid.zip
+    return send_file(
+        os.path.join(OUTPUT_FOLDER, filename), 
+        as_attachment=True,
+        download_name="ChunkFlow_Output.zip" 
+    )
 
 if __name__ == '__main__':
-    # Listen on all interfaces for Docker/Tunnel compatibility
-    print("🚀 ChunkFlow is running on http://0.0.0.0:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)

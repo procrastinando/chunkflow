@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', (e) => {
         selectedFiles = Array.from(e.target.files);
         if (selectedFiles.length > 0) {
-            fileListDisplay.innerHTML = `<i class="fa-solid fa-check"></i> ${selectedFiles.length} file(s) selected`;
+            fileListDisplay.innerHTML = `<i class="fa-solid fa-check"></i> ${selectedFiles.length} file(s) ready`;
             convertBtn.innerHTML = `<i class="fa-solid fa-bolt"></i> Process ${selectedFiles.length} Files`;
         } else {
             fileListDisplay.innerHTML = '';
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle Processing
     convertBtn.addEventListener('click', async () => {
         if (selectedFiles.length === 0) {
-            alert("Please select at least one .md file");
+            alert("Please upload at least one .md file");
             return;
         }
 
@@ -34,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
         step1.classList.remove('active');
         step2.classList.add('active');
 
-        // Prepare Data
         const formData = new FormData();
         selectedFiles.forEach(file => {
             formData.append('files', file);
@@ -73,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Populate Logs
         const logContainer = document.getElementById('log-container');
-        logContainer.innerHTML = ''; // Clear
+        logContainer.innerHTML = ''; 
 
         let totalChunks = 0;
 
@@ -82,16 +81,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalChunks += log.chunks;
                 logContainer.innerHTML += `
                 <div class="task-item done">
-                    <div class="task-icon"><i class="fa-solid fa-file"></i></div>
+                    <div class="task-icon"><i class="fa-solid fa-file-code"></i></div>
                     <div class="task-info">
                         <div class="task-header">${log.file}</div>
-                        <div class="task-detail">Generated ${log.chunks} chunks</div>
+                        <div class="task-detail">Created ${log.chunks} chunks</div>
                     </div>
                 </div>`;
             } else {
                 logContainer.innerHTML += `
-                <div class="task-item skipped">
-                    <div class="task-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="task-item" style="border-color: #ef4444;">
+                    <div class="task-icon" style="color: #ef4444;"><i class="fa-solid fa-triangle-exclamation"></i></div>
                     <div class="task-info">
                         <div class="task-header">${log.file}</div>
                         <div class="task-detail">Error: ${log.message}</div>
@@ -100,16 +99,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        document.getElementById('result-stats').innerText = `Total ${totalChunks} JSON chunks created.`;
+        document.getElementById('result-stats').innerText = `Total ${totalChunks} chunks generated.`;
         
-        // Add to history (Client side only for demo)
+        // History Mockup
         const historyList = document.getElementById('history-list');
         const historyItem = document.createElement('li');
         historyItem.innerHTML = `
             <span>Batch Process (${selectedFiles.length} files)</span>
             <a href="${data.download_url}" class="history-link">DL</a>
         `;
-        if(historyList.children[0].innerText === "No recent history") historyList.innerHTML = '';
+        if(historyList.children[0].innerText.includes("No recent")) historyList.innerHTML = '';
         historyList.prepend(historyItem);
     }
 });
