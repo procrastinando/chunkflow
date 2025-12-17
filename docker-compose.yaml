@@ -1,0 +1,15 @@
+services:
+  chunkflow:
+    build: https://github.com/procrastinando/chunkflow.git
+    container_name: chunkflow
+    ports:
+      - "5000:5000"
+    volumes:
+      # Optional: Mount the source code for easier development
+      # - .:/app
+      # We don't need to mount data folders as files are processed temporarily and zipped
+      - ./temp_logs:/app/logs # Example if you wanted to add persistent logging later
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
